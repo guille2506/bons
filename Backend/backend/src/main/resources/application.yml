@@ -1,0 +1,109 @@
+server:
+  # Render/hosts inyectan el puerto en $PORT; local cae a 8081.
+  port: ${PORT:8081}
+
+spring:
+  application:
+    name: financeai-backend
+
+  # --- Seguridad: valida el JWT de Supabase (firma ES256) contra su JWKS público ---
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${SUPABASE_URL:https://wfypvyfhpworindwllsz.supabase.co}/auth/v1/.well-known/jwks.json
+          # Supabase firma con ES256; sin esto, Spring espera RS256 por defecto y rechaza el token.
+          jws-algorithms:
+            - ES256
+
+#conexion local
+#  datasource:
+#    url: jdbc:postgresql://localhost:5432/financeai
+#    username: postgres
+#    password: postgres
+#    driver-class-name: org.postgresql.Driver
+
+  datasource:
+    # Externalizado: en Render se setean DB_URL/DB_USER/DB_PASS como env vars (secrets).
+    # Los defaults mantienen el arranque local sin configurar nada.
+    url: ${DB_URL:jdbc:postgresql://aws-1-sa-east-1.pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0}
+    username: ${DB_USER:postgres.wfypvyfhpworindwllsz}
+    password: ${DB_PASS}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    # Ejecuta data.sql DESPUÉS de que Hibernate cree las tablas
+    defer-datasource-initialization: true
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: false
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+  # Límite de subida (import CSV). Un archivo mayor se rechaza con mensaje claro.
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
+
+  sql:
+    init:
+      mode: always
+      data-locations: classpath:data.sql
+      continue-on-error: false
+
+# Auth service-to-service: token compartido con el AI-Service (header X-Service-Token).
+# Vacío = deshabilitado (no se acepta ninguna llamada de servicio).
+app:
+  service-token: ${SERVICE_TOKEN:}
+  # Emails con acceso total (pueden ver perfiles de otros). Separados por coma.
+  admin-emails: ${ADMIN_EMAILS:demo.admin@finsight.com}
+  # Orígenes permitidos por CORS (frontend). Coma-separados. En prod: la URL de Vercel.
+  cors:
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
+
+# Microservicio de ML (FastAPI). Si está caído, el backend usa las reglas internas.
+ml:
+  service:
+    enabled: ${ML_SERVICE_ENABLED:true}
+    # En Render apunta a la URL pública del AI-Service (ML_SERVICE_URL). Local: 127.0.0.1:8000.
+    url: ${ML_SERVICE_URL:http://127.0.0.1:8000}
+    connect-timeout-ms: 2000
+    read-timeout-ms: 5000
+    # Confianza mínima para aceptar la categoría del modelo; por debajo se usan las reglas.
+    classification-confidence-threshold: 0.5
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+  api-docs:
+    path: /v3/api-docs
+
+logging:
+  level:
+    com.financeai: INFO
+    org.hibernate.SQL: WARN
+
+supabase:
+  url: ${SUPABASE_URL:https://wfypvyfhpworindwllsz.supabase.co}
+  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY}
+
+# Actuator: exponemos SOLO el health-check por la web (sin detalles sensibles).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
